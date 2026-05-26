@@ -8,20 +8,20 @@ import tempfile
 from pathlib import Path
 
 from liveframe.core.profanity import censor_text
-from liveframe.core.subtitle_renderer import group_words, WordGroup
-from liveframe.core.transcriber import transcribe, TranscriptionError
+from liveframe.core.subtitle_renderer import WordGroup, group_words
+from liveframe.core.transcriber import TranscriptionError, transcribe
 from liveframe.models import CaptionStyle
 
 logger = logging.getLogger(__name__)
 
 # Default speaker colors — used when diarize=True and no custom colors provided
 _SPEAKER_COLORS_DEFAULT = [
-    (0, 230, 118),    # green (#00e676)
+    (0, 230, 118),  # green (#00e676)
     (100, 181, 246),  # blue (#64b5f6)
-    (255, 183, 77),   # orange (#ffb74d)
+    (255, 183, 77),  # orange (#ffb74d)
     (206, 147, 216),  # purple (#ce93d8)
-    (240, 98, 146),   # pink (#f06292)
-    (77, 208, 225),   # cyan (#4dd0e1)
+    (240, 98, 146),  # pink (#f06292)
+    (77, 208, 225),  # cyan (#4dd0e1)
     (255, 241, 118),  # yellow (#fff176)
     (129, 199, 132),  # light green (#81c784)
 ]
@@ -52,17 +52,21 @@ def _build_speaker_color_map(
             color_map[speaker] = _SPEAKER_COLORS_DEFAULT[i % len(_SPEAKER_COLORS_DEFAULT)]
 
     if color_map:
-        logger.info("Speaker colors: %s", {s: f"#{r:02x}{g:02x}{b:02x}" for s, (r, g, b) in color_map.items()})
+        logger.info(
+            "Speaker colors: %s",
+            {s: f"#{r:02x}{g:02x}{b:02x}" for s, (r, g, b) in color_map.items()},
+        )
 
     return color_map
 
 
 def _load_font(font_family: str, font_size: int):
     """Load a font by family name, falling back to system defaults."""
-    from PIL import ImageFont
-
     # Try the requested font across all platforms
     import os
+
+    from PIL import ImageFont
+
     search_paths = [
         # macOS
         f"/System/Library/Fonts/{font_family}.ttc",
@@ -174,7 +178,7 @@ def _render_caption_frames(
                 space_w = draw.textlength(" ", font=font)
                 for i, word in enumerate(word_texts):
                     w = draw.textlength(word, font=font)
-                    is_active = (i == highlight_idx)
+                    is_active = i == highlight_idx
                     if has_speakers and i < len(speakers) and speakers[i]:
                         color = speaker_colors.get(speakers[i], highlight_color)
                     elif is_active:
@@ -193,7 +197,12 @@ def _render_caption_frames(
                 for offset in [(2, 2), (-2, 2), (2, -2), (-2, -2), (0, 3), (3, 0)]:
                     sx = x
                     for word, w, _, _ in parts:
-                        draw.text((sx + offset[0], y + offset[1]), word, font=font, fill=shadow_color + (200,))
+                        draw.text(
+                            (sx + offset[0], y + offset[1]),
+                            word,
+                            font=font,
+                            fill=shadow_color + (200,),
+                        )
                         sx += w + space_w
 
                 # Draw words
@@ -219,8 +228,14 @@ async def _probe_clip(clip_path: Path) -> tuple[float, float, int, int]:
     import json
 
     proc = await asyncio.create_subprocess_exec(
-        "ffprobe", "-v", "quiet", "-print_format", "json",
-        "-show_format", "-show_streams", str(clip_path),
+        "ffprobe",
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
+        "-show_format",
+        "-show_streams",
+        str(clip_path),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -272,8 +287,11 @@ async def add_captions(
     try:
         # Step 1: Transcribe (uses cache if available)
         words = await transcribe(
-            clip_path, model_size=model_size, openai_api_key=openai_api_key,
-            diarize=style.diarize, hf_token=hf_token,
+            clip_path,
+            model_size=model_size,
+            openai_api_key=openai_api_key,
+            diarize=style.diarize,
+            hf_token=hf_token,
             cache_path=transcript_cache_path,
         )
 
@@ -306,13 +324,24 @@ async def add_captions(
 
         logger.info(
             "Burning captions into %s (%d word groups, %dx%d @ %.1ffps)...",
-            clip_path.name, len(groups), video_width, video_height, fps,
+            clip_path.name,
+            len(groups),
+            video_width,
+            video_height,
+            fps,
         )
 
         # Step 4: Render caption overlay frames
         loop = asyncio.get_event_loop()
         frames = await loop.run_in_executor(
-            None, _render_caption_frames, groups, video_width, video_height, fps, duration, style,
+            None,
+            _render_caption_frames,
+            groups,
+            video_width,
+            video_height,
+            fps,
+            duration,
+            style,
         )
 
         # Step 5: Write raw frames + encode overlay
@@ -330,12 +359,20 @@ async def add_captions(
                     f.write(current_data)
 
         proc = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-y",
-            "-f", "rawvideo", "-pix_fmt", "rgba",
-            "-s", f"{video_width}x{video_height}",
-            "-r", str(fps),
-            "-i", str(raw_path),
-            "-c:v", "png",
+            "ffmpeg",
+            "-y",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgba",
+            "-s",
+            f"{video_width}x{video_height}",
+            "-r",
+            str(fps),
+            "-i",
+            str(raw_path),
+            "-c:v",
+            "png",
             str(overlay_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -349,12 +386,22 @@ async def add_captions(
 
         # Step 6: Composite
         proc = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-y",
-            "-i", str(clip_path),
-            "-i", str(overlay_path),
-            "-filter_complex", "overlay=0:0",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-            "-c:a", "copy",
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(clip_path),
+            "-i",
+            str(overlay_path),
+            "-filter_complex",
+            "overlay=0:0",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "18",
+            "-c:a",
+            "copy",
             str(captioned_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -374,4 +421,5 @@ async def add_captions(
 
     finally:
         import shutil
+
         shutil.rmtree(tmp_dir, ignore_errors=True)

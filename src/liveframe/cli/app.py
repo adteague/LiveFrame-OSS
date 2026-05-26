@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sys
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -13,10 +12,10 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from liveframe.config import (
+    AnalysisMode,
     AspectRatio,
     GeminiModel,
     LiveframeSettings,
-    AnalysisMode,
     PresetCriteria,
 )
 from liveframe.models import DeduplicatedHighlight, JobStatus
@@ -187,7 +186,22 @@ def run(
 ) -> None:
     """Analyze a video and extract highlight clips."""
     _setup_logging(verbose)
-    settings = _build_settings(model, clips_per_hour, min_clips_total, min_clip_length, margin, analysis_mode, aspect_ratio, accurate_cuts, no_downscale, analysis_fps, captions, caption_model, diarize, api_key)
+    settings = _build_settings(
+        model,
+        clips_per_hour,
+        min_clips_total,
+        min_clip_length,
+        margin,
+        analysis_mode,
+        aspect_ratio,
+        accurate_cuts,
+        no_downscale,
+        analysis_fps,
+        captions,
+        caption_model,
+        diarize,
+        api_key,
+    )
 
     try:
         settings.resolve_api_key()

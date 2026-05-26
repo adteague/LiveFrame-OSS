@@ -23,9 +23,7 @@ def _get_crop_filter(aspect_ratio: AspectRatio) -> str | None:
     return None
 
 
-def _get_output_dimensions(
-    source_width: int, source_height: int, aspect_ratio: AspectRatio
-) -> tuple[int, int]:
+def _get_output_dimensions(source_width: int, source_height: int, aspect_ratio: AspectRatio) -> tuple[int, int]:
     """Calculate output dimensions after cropping."""
     if aspect_ratio == AspectRatio.PORTRAIT:
         out_w = int(source_height * 9 / 16)
@@ -37,6 +35,7 @@ def _get_output_dimensions(
         size = size - (size % 2)
         return size, size
     return source_width, source_height
+
 
 logger = logging.getLogger(__name__)
 
@@ -94,27 +93,45 @@ async def extract_clip(
     if needs_reencode:
         vf = crop_filter or ""
         cmd = [
-            "ffmpeg", "-y",
-            "-i", str(input_path),
-            "-ss", str(highlight.padded_start_seconds),
-            "-to", str(highlight.padded_end_seconds),
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(input_path),
+            "-ss",
+            str(highlight.padded_start_seconds),
+            "-to",
+            str(highlight.padded_end_seconds),
         ]
         if vf:
             cmd += ["-vf", vf]
         cmd += [
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-            "-c:a", "aac", "-b:a", "192k",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "18",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
             str(output_path),
         ]
     else:
         # Fast mode: seek before input (keyframe-aligned), copy streams
         cmd = [
-            "ffmpeg", "-y",
-            "-ss", str(highlight.padded_start_seconds),
-            "-i", str(input_path),
-            "-t", str(duration),
-            "-c", "copy",
-            "-avoid_negative_ts", "make_zero",
+            "ffmpeg",
+            "-y",
+            "-ss",
+            str(highlight.padded_start_seconds),
+            "-i",
+            str(input_path),
+            "-t",
+            str(duration),
+            "-c",
+            "copy",
+            "-avoid_negative_ts",
+            "make_zero",
             str(output_path),
         ]
 
@@ -129,14 +146,11 @@ async def extract_clip(
 
     if proc.returncode != 0:
         raise ClipExtractionError(
-            f"Failed to extract clip {highlight.index + 1} "
-            f"'{highlight.title}': {stderr.decode().strip()[-200:]}"
+            f"Failed to extract clip {highlight.index + 1} '{highlight.title}': {stderr.decode().strip()[-200:]}"
         )
 
     if not output_path.exists():
-        raise ClipExtractionError(
-            f"Clip file not created for highlight {highlight.index + 1}: {output_path}"
-        )
+        raise ClipExtractionError(f"Clip file not created for highlight {highlight.index + 1}: {output_path}")
 
     actual_size = output_path.stat().st_size
     logger.info(
@@ -197,7 +211,10 @@ async def extract_all_clips(
         async with semaphore:
             try:
                 clip = await extract_clip(
-                    input_path, highlight, output_dir, settings,
+                    input_path,
+                    highlight,
+                    output_dir,
+                    settings,
                     highlight_video_width=video_width,
                     highlight_video_height=video_height,
                 )

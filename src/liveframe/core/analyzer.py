@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import tempfile
 from pathlib import Path
 
 from google import genai
@@ -16,7 +15,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from liveframe.config import LiveframeSettings, PresetCriteria, PRESET_CRITERIA_TEXT
+from liveframe.config import PRESET_CRITERIA_TEXT, LiveframeSettings, PresetCriteria
 from liveframe.exceptions import AnalysisError, FileUploadError
 from liveframe.models import ChunkAnalysisResult, ChunkWindow, HighlightMoment
 
@@ -102,25 +101,46 @@ async def _split_chunk_file(
             vf_filters.append("scale=-2:720")
 
         cmd = [
-            "ffmpeg", "-y",
-            "-ss", str(chunk.start_seconds),
-            "-i", str(input_path),
-            "-t", str(chunk.duration_seconds),
-            "-threads", "4",
-            "-vf", ",".join(vf_filters),
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-            "-c:a", "aac", "-b:a", "128k",
-            "-avoid_negative_ts", "make_zero",
+            "ffmpeg",
+            "-y",
+            "-ss",
+            str(chunk.start_seconds),
+            "-i",
+            str(input_path),
+            "-t",
+            str(chunk.duration_seconds),
+            "-threads",
+            "4",
+            "-vf",
+            ",".join(vf_filters),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-crf",
+            "28",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-avoid_negative_ts",
+            "make_zero",
             str(output_path),
         ]
     else:
         cmd = [
-            "ffmpeg", "-y",
-            "-ss", str(chunk.start_seconds),
-            "-i", str(input_path),
-            "-t", str(chunk.duration_seconds),
-            "-c", "copy",
-            "-avoid_negative_ts", "make_zero",
+            "ffmpeg",
+            "-y",
+            "-ss",
+            str(chunk.start_seconds),
+            "-i",
+            str(input_path),
+            "-t",
+            str(chunk.duration_seconds),
+            "-c",
+            "copy",
+            "-avoid_negative_ts",
+            "make_zero",
             str(output_path),
         ]
 
@@ -132,9 +152,7 @@ async def _split_chunk_file(
     _, stderr = await proc.communicate()
 
     if proc.returncode != 0:
-        raise FileUploadError(
-            f"Failed to split chunk {chunk.index}: {stderr.decode().strip()}"
-        )
+        raise FileUploadError(f"Failed to split chunk {chunk.index}: {stderr.decode().strip()}")
 
     return output_path
 
@@ -147,6 +165,7 @@ def _upload_file_sync(client: genai.Client, file_path: Path) -> types.File:
 
     # Poll until the file is ACTIVE
     import time
+
     max_wait = 600  # 10 minutes
     poll_interval = 5
     waited = 0
@@ -239,9 +258,7 @@ async def split_chunk(
         _format_timestamp(chunk.end_seconds),
         tag_str,
     )
-    return await _split_chunk_file(
-        input_path, chunk, tmp_dir, downscale=downscale, analysis_fps=analysis_fps
-    )
+    return await _split_chunk_file(input_path, chunk, tmp_dir, downscale=downscale, analysis_fps=analysis_fps)
 
 
 async def analyze_chunk(
@@ -263,9 +280,7 @@ async def analyze_chunk(
 
     # Upload to Gemini (run sync upload in thread pool)
     loop = asyncio.get_event_loop()
-    uploaded_file = await loop.run_in_executor(
-        None, _upload_file_sync, client, chunk_file
-    )
+    uploaded_file = await loop.run_in_executor(None, _upload_file_sync, client, chunk_file)
 
     try:
         # Build prompt
@@ -298,7 +313,9 @@ async def analyze_chunk(
         for moment in result.moments:
             adjusted = moment.model_copy(
                 update={
-                    "start_seconds": moment.start_seconds + chunk.start_seconds if needs_offset else moment.start_seconds,
+                    "start_seconds": moment.start_seconds + chunk.start_seconds
+                    if needs_offset
+                    else moment.start_seconds,
                     "end_seconds": moment.end_seconds + chunk.start_seconds if needs_offset else moment.end_seconds,
                 }
             )

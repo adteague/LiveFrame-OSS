@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -9,9 +10,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-import logging
-
-from liveframe.api.routes import router, _jobs, load_persisted_jobs
+from liveframe.api.routes import _jobs, load_persisted_jobs, router
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +48,7 @@ def create_app() -> FastAPI:
         clip_path = Path(path)
         if not clip_path.exists() or not clip_path.suffix == ".mp4":
             from fastapi import HTTPException
+
             raise HTTPException(status_code=404, detail="Clip not found")
         return FileResponse(clip_path, media_type="video/mp4")
 

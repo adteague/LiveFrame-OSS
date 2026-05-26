@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 
 from liveframe.config import AspectRatio
-from liveframe.core.captioner import add_captions, _probe_clip
+from liveframe.core.captioner import _probe_clip, add_captions
 from liveframe.core.extractor import _get_crop_filter
 from liveframe.models import CaptionStyle, WatermarkSettings
 
@@ -41,18 +41,25 @@ async def _apply_watermark(
 
     # Build filter: scale watermark, apply opacity, overlay on main video
     opacity = max(0.0, min(1.0, watermark.opacity))
-    filter_complex = (
-        f"[1:v]scale={wm_w}:-1,format=rgba,colorchannelmixer=aa={opacity}[wm];"
-        f"[0:v][wm]overlay={pos}"
-    )
+    filter_complex = f"[1:v]scale={wm_w}:-1,format=rgba,colorchannelmixer=aa={opacity}[wm];[0:v][wm]overlay={pos}"
 
     cmd = [
-        "ffmpeg", "-y",
-        "-i", str(clip_path),
-        "-i", str(watermark.image_path),
-        "-filter_complex", filter_complex,
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-        "-c:a", "copy",
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(clip_path),
+        "-i",
+        str(watermark.image_path),
+        "-filter_complex",
+        filter_complex,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-crf",
+        "18",
+        "-c:a",
+        "copy",
         str(output_path),
     ]
 
@@ -113,19 +120,35 @@ async def _concat_with_intro_outro(
         concat_inputs.append(f"[v{i}][a{i}]")
 
     filter_complex = (
-        ";".join(video_filters) + ";"
-        + ";".join(audio_filters) + ";"
+        ";".join(video_filters)
+        + ";"
+        + ";".join(audio_filters)
+        + ";"
         + "".join(concat_inputs)
         + f"concat=n={len(inputs)}:v=1:a=1[v][a]"
     )
 
-    cmd.extend([
-        "-filter_complex", filter_complex,
-        "-map", "[v]", "-map", "[a]",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-        "-c:a", "aac", "-b:a", "192k",
-        str(output_path),
-    ])
+    cmd.extend(
+        [
+            "-filter_complex",
+            filter_complex,
+            "-map",
+            "[v]",
+            "-map",
+            "[a]",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "18",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            str(output_path),
+        ]
+    )
 
     logger.info("Concatenating %d clips (W=%d, H=%d)", len(inputs), W, H)
 
@@ -172,11 +195,20 @@ async def render_clip(
         if crop_filter:
             cropped_path = tmp_dir / "cropped.mp4"
             cmd = [
-                "ffmpeg", "-y",
-                "-i", str(working_path),
-                "-vf", crop_filter,
-                "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-                "-c:a", "copy",
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(working_path),
+                "-vf",
+                crop_filter,
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "18",
+                "-c:a",
+                "copy",
                 str(cropped_path),
             ]
             proc = await asyncio.create_subprocess_exec(
@@ -229,7 +261,11 @@ async def render_clip(
 
         # Move final result to output path
         shutil.copy2(working_path, output_path)
-        logger.info("Rendered clip: %s (%.1f MB)", output_path.name, output_path.stat().st_size / (1024 * 1024))
+        logger.info(
+            "Rendered clip: %s (%.1f MB)",
+            output_path.name,
+            output_path.stat().st_size / (1024 * 1024),
+        )
         return output_path
 
     finally:

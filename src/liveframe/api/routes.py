@@ -12,10 +12,9 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 
 from liveframe.api.dependencies import get_settings
-from liveframe.config import LiveframeSettings, GeminiModel, AnalysisMode, PresetCriteria
+from liveframe.config import AnalysisMode, GeminiModel, LiveframeSettings, PresetCriteria
 from liveframe.core.pipeline import process_video
 from liveframe.models import (
-    CaptionStyle,
     ClipRenderSettings,
     DeduplicatedHighlight,
     ExtractedClip,
@@ -26,7 +25,6 @@ from liveframe.models import (
     RenderRequest,
     RenderResponse,
     RenderStatus,
-    SpeakerInfo,
 )
 
 logger = logging.getLogger(__name__)
@@ -184,15 +182,11 @@ async def _run_job(job: Job, settings: LiveframeSettings) -> None:
             _save_job(job)
 
     except asyncio.CancelledError:
-        job.progress = ProgressEvent(
-            status=JobStatus.FAILED, current_step="Cancelled", error="Job was cancelled"
-        )
+        job.progress = ProgressEvent(status=JobStatus.FAILED, current_step="Cancelled", error="Job was cancelled")
         _save_job(job)
     except Exception as e:
         logger.error("Job %s failed: %s", job.id, e)
-        job.progress = ProgressEvent(
-            status=JobStatus.FAILED, current_step="Failed", error=str(e)
-        )
+        job.progress = ProgressEvent(status=JobStatus.FAILED, current_step="Failed", error=str(e))
         _save_job(job)
 
 
@@ -303,8 +297,9 @@ async def delete_job(job_id: str):
 @router.get("/asset")
 async def serve_asset(path: str):
     """Serve a local file (image or any media) for preview purposes."""
-    from fastapi.responses import FileResponse
     import mimetypes
+
+    from fastapi.responses import FileResponse
 
     file_path = Path(path).expanduser().resolve()
     if not file_path.exists() or not file_path.is_file():
@@ -324,8 +319,14 @@ async def probe_file(path: str) -> dict:
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
 
     proc = await asyncio.create_subprocess_exec(
-        "ffprobe", "-v", "quiet", "-print_format", "json",
-        "-show_format", "-show_streams", str(file_path),
+        "ffprobe",
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
+        "-show_format",
+        "-show_streams",
+        str(file_path),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -416,12 +417,14 @@ async def browse_files(path: str = "~") -> dict:
                 items.append({"name": entry.name, "path": str(entry), "type": "directory"})
             elif entry.suffix.lower() in (".mp4", ".png", ".jpg", ".jpeg", ".webp", ".gif"):
                 size_mb = entry.stat().st_size / (1024 * 1024)
-                items.append({
-                    "name": entry.name,
-                    "path": str(entry),
-                    "type": "file",
-                    "size_mb": round(size_mb, 1),
-                })
+                items.append(
+                    {
+                        "name": entry.name,
+                        "path": str(entry),
+                        "type": "file",
+                        "size_mb": round(size_mb, 1),
+                    }
+                )
     except PermissionError:
         raise HTTPException(status_code=403, detail="Permission denied")
 
@@ -437,14 +440,12 @@ async def browse_files(path: str = "~") -> dict:
 @router.get("/health")
 async def health_check() -> dict:
     """Check system health: ffmpeg availability and API key configuration."""
-    import shutil
     import os
+    import shutil
 
     ffmpeg_ok = shutil.which("ffmpeg") is not None
     ffprobe_ok = shutil.which("ffprobe") is not None
-    api_key_set = bool(
-        os.environ.get("GEMINI_API_KEY") or os.environ.get("LIVEFRAME_GEMINI_API_KEY")
-    )
+    api_key_set = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("LIVEFRAME_GEMINI_API_KEY"))
 
     healthy = ffmpeg_ok and ffprobe_ok and api_key_set
 
@@ -490,11 +491,16 @@ async def get_thumbnail(job_id: str, clip_index: int):
         seek_time = duration * 0.25
 
         proc = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-y",
-            "-ss", str(seek_time),
-            "-i", str(clip_path),
-            "-frames:v", "1",
-            "-q:v", "5",
+            "ffmpeg",
+            "-y",
+            "-ss",
+            str(seek_time),
+            "-i",
+            str(clip_path),
+            "-frames:v",
+            "1",
+            "-q:v",
+            "5",
             str(thumb_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -586,13 +592,17 @@ async def render_clip_endpoint(
     }
 
     # Save settings to manifest
-    _save_clip_settings(job, clip_index, ClipRenderSettings(
-        aspect_ratio=request.aspect_ratio,
-        caption_style=request.caption_style,
-        intro_path=request.intro_path,
-        outro_path=request.outro_path,
-        watermark=request.watermark,
-    ))
+    _save_clip_settings(
+        job,
+        clip_index,
+        ClipRenderSettings(
+            aspect_ratio=request.aspect_ratio,
+            caption_style=request.caption_style,
+            intro_path=request.intro_path,
+            outro_path=request.outro_path,
+            watermark=request.watermark,
+        ),
+    )
 
     return RenderResponse(status=RenderStatus.PENDING)
 
@@ -652,7 +662,8 @@ async def transcribe_clip(
     settings: LiveframeSettings = Depends(get_settings),
 ):
     """Transcribe a clip and detect speakers. Returns task ID for polling."""
-    from liveframe.core.transcriber import transcribe as do_transcribe, summarize_speakers
+    from liveframe.core.transcriber import summarize_speakers
+    from liveframe.core.transcriber import transcribe as do_transcribe
 
     job = _jobs.get(job_id)
     if not job:
@@ -800,10 +811,12 @@ async def list_fonts() -> list[dict]:
     for display_name, patterns in _CURATED_FONTS:
         for p in patterns:
             if p.lower() in available:
-                fonts.append({
-                    "name": display_name,
-                    "path": available[p.lower()],
-                })
+                fonts.append(
+                    {
+                        "name": display_name,
+                        "path": available[p.lower()],
+                    }
+                )
                 break
 
     return fonts

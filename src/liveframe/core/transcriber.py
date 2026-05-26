@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from liveframe.exceptions import LiveframeError
@@ -33,12 +33,17 @@ async def extract_audio(video_path: Path, output_path: Path | None = None) -> Pa
         output_path = Path(tempfile.mktemp(suffix=".wav", prefix="liveframe_audio_"))
 
     cmd = [
-        "ffmpeg", "-y",
-        "-i", str(video_path),
+        "ffmpeg",
+        "-y",
+        "-i",
+        str(video_path),
         "-vn",
-        "-acodec", "pcm_s16le",
-        "-ar", "16000",
-        "-ac", "1",
+        "-acodec",
+        "pcm_s16le",
+        "-ar",
+        "16000",
+        "-ac",
+        "1",
         str(output_path),
     ]
 
@@ -52,7 +57,11 @@ async def extract_audio(video_path: Path, output_path: Path | None = None) -> Pa
     if proc.returncode != 0:
         raise TranscriptionError(f"Audio extraction failed: {stderr.decode().strip()[-200:]}")
 
-    logger.debug("Extracted audio: %s (%.1f MB)", output_path.name, output_path.stat().st_size / (1024 * 1024))
+    logger.debug(
+        "Extracted audio: %s (%.1f MB)",
+        output_path.name,
+        output_path.stat().st_size / (1024 * 1024),
+    )
     return output_path
 
 
@@ -65,9 +74,7 @@ async def _diarize(audio_path: Path, hf_token: str = "") -> list[tuple[float, fl
     try:
         from pyannote.audio import Pipeline as PyannotePipeline
     except ImportError:
-        raise TranscriptionError(
-            "pyannote.audio is not installed. Run: pip install pyannote.audio"
-        )
+        raise TranscriptionError("pyannote.audio is not installed. Run: pip install pyannote.audio")
 
     logger.info("Running speaker diarization...")
     loop = asyncio.get_event_loop()
@@ -134,9 +141,7 @@ async def transcribe_local(
     try:
         from faster_whisper import WhisperModel
     except ImportError:
-        raise TranscriptionError(
-            "faster-whisper is not installed. Run: pip install liveframe[captions]"
-        )
+        raise TranscriptionError("faster-whisper is not installed. Run: pip install liveframe[captions]")
 
     logger.info("Transcribing with faster-whisper (model: %s)...", model_size)
 
@@ -154,11 +159,13 @@ async def transcribe_local(
         for segment in segments:
             if segment.words:
                 for w in segment.words:
-                    words.append(TimedWord(
-                        word=w.word.strip(),
-                        start=w.start,
-                        end=w.end,
-                    ))
+                    words.append(
+                        TimedWord(
+                            word=w.word.strip(),
+                            start=w.start,
+                            end=w.end,
+                        )
+                    )
 
         return words
 
@@ -196,11 +203,13 @@ async def transcribe_openai(
     words: list[TimedWord] = []
 
     for w in data.get("words", []):
-        words.append(TimedWord(
-            word=w["word"].strip(),
-            start=w["start"],
-            end=w["end"],
-        ))
+        words.append(
+            TimedWord(
+                word=w["word"].strip(),
+                start=w["start"],
+                end=w["end"],
+            )
+        )
 
     logger.info("Transcribed %d words via OpenAI", len(words))
     return words
@@ -212,6 +221,7 @@ def _load_cached_transcript(cache_path: Path | None) -> list[TimedWord] | None:
         return None
     try:
         import json
+
         data = json.loads(cache_path.read_text())
         return [TimedWord(**w) for w in data.get("words", [])]
     except Exception as e:
@@ -224,6 +234,7 @@ def _save_cached_transcript(words: list[TimedWord], cache_path: Path) -> None:
     try:
         import json
         from dataclasses import asdict
+
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         data = {"words": [asdict(w) for w in words]}
         cache_path.write_text(json.dumps(data, indent=2))
@@ -290,7 +301,7 @@ def summarize_speakers(words: list[TimedWord]) -> list[dict]:
             }
         s = speakers[w.speaker]
         s["word_count"] += 1
-        s["total_duration_seconds"] += (w.end - w.start)
+        s["total_duration_seconds"] += w.end - w.start
         if len(s["sample_words"]) < 8:
             s["sample_words"].append(w.word)
 

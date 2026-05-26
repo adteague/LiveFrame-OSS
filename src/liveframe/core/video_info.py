@@ -29,8 +29,10 @@ async def probe_video(path: Path) -> VideoInfo:
 
     cmd = [
         "ffprobe",
-        "-v", "quiet",
-        "-print_format", "json",
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
         "-show_format",
         "-show_streams",
         str(path),
@@ -44,9 +46,7 @@ async def probe_video(path: Path) -> VideoInfo:
         )
         stdout, stderr = await proc.communicate()
     except FileNotFoundError:
-        raise FFmpegError(
-            "ffprobe not found. Install ffmpeg: https://ffmpeg.org/download.html"
-        )
+        raise FFmpegError("ffprobe not found. Install ffmpeg: https://ffmpeg.org/download.html")
 
     if proc.returncode != 0:
         raise FFmpegError(f"ffprobe failed (exit {proc.returncode}): {stderr.decode().strip()}")

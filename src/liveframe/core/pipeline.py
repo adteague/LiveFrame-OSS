@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import tempfile
 from collections.abc import AsyncGenerator
@@ -85,14 +84,17 @@ async def process_video(
 
             for chunk_window in chunks:
                 chunk_file = await split_chunk(
-                    input_path, chunk_window, tmp_dir,
+                    input_path,
+                    chunk_window,
+                    tmp_dir,
                     downscale=settings.downscale_for_analysis,
                     analysis_fps=settings.analysis_fps,
                 )
                 chunk_files[chunk_window.index] = chunk_file
                 logger.info(
                     "Split chunk %d/%d: %s (%.1f MB)",
-                    chunk_window.index + 1, len(chunks),
+                    chunk_window.index + 1,
+                    len(chunks),
                     chunk_file.name,
                     chunk_file.stat().st_size / (1024 * 1024),
                 )
@@ -257,6 +259,7 @@ def _cleanup_tmp(tmp_dir: Path | None) -> None:
     """Clean up temporary chunk files."""
     if tmp_dir and tmp_dir.exists():
         import shutil
+
         shutil.rmtree(tmp_dir, ignore_errors=True)
         logger.debug("Cleaned up temp dir: %s", tmp_dir)
 

@@ -61,22 +61,26 @@ def group_words(words: list[TimedWord], max_words: int = 3, pause_threshold: flo
         # - There's a natural pause
         # - The speaker changed
         if len(current) >= max_words or gap > pause_threshold or speaker_changed:
-            groups.append(WordGroup(
-                words=list(current),
-                start=current[0].start,
-                end=current[-1].end,
-            ))
+            groups.append(
+                WordGroup(
+                    words=list(current),
+                    start=current[0].start,
+                    end=current[-1].end,
+                )
+            )
             current = [word]
         else:
             current.append(word)
 
     # Final group
     if current:
-        groups.append(WordGroup(
-            words=list(current),
-            start=current[0].start,
-            end=current[-1].end,
-        ))
+        groups.append(
+            WordGroup(
+                words=list(current),
+                start=current[0].start,
+                end=current[-1].end,
+            )
+        )
 
     logger.debug("Grouped %d words into %d display groups", len(words), len(groups))
     return groups
