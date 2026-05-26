@@ -46,8 +46,10 @@ def download_from_url(url: str) -> Path:
     cmd = [
         "yt-dlp",
         "--no-playlist",
-        "--merge-output-format", "mp4",
-        "-o", str(output_path),
+        "--merge-output-format",
+        "mp4",
+        "-o",
+        str(output_path),
         url,
     ]
 
@@ -127,11 +129,14 @@ async def run_job():
             local_input = download_from_gcs(input_path)
         except Exception as e:
             logger.error("GCS download failed: %s", e)
-            update_supabase(job_id, {
-                "status": "failed",
-                "error": f"Download failed: {e}",
-                "progress": {"current_step": "Failed"},
-            })
+            update_supabase(
+                job_id,
+                {
+                    "status": "failed",
+                    "error": f"Download failed: {e}",
+                    "progress": {"current_step": "Failed"},
+                },
+            )
             return
     elif is_url(input_path):
         update_supabase(job_id, {"progress": {"current_step": "Downloading video from URL..."}})
@@ -139,11 +144,14 @@ async def run_job():
             local_input = download_from_url(input_path)
         except Exception as e:
             logger.error("URL download failed: %s", e)
-            update_supabase(job_id, {
-                "status": "failed",
-                "error": f"Download failed: {e}",
-                "progress": {"current_step": "Failed"},
-            })
+            update_supabase(
+                job_id,
+                {
+                    "status": "failed",
+                    "error": f"Download failed: {e}",
+                    "progress": {"current_step": "Failed"},
+                },
+            )
             return
 
     resolved_input = local_input or Path(input_path)
@@ -180,7 +188,6 @@ async def run_job():
             preset=preset,
             output_dir=output_dir,
         ):
-
             # Sync progress to Supabase
             progress_data = {
                 "current_step": event.current_step,
@@ -208,11 +215,14 @@ async def run_job():
             update_supabase(job_id, updates)
 
             if event.status == JobStatus.FAILED:
-                update_supabase(job_id, {
-                    "status": "failed",
-                    "error": event.error or "Unknown error",
-                    "progress": progress_data,
-                })
+                update_supabase(
+                    job_id,
+                    {
+                        "status": "failed",
+                        "error": event.error or "Unknown error",
+                        "progress": progress_data,
+                    },
+                )
                 return
 
         # Upload clips to GCS
@@ -233,27 +243,36 @@ async def run_job():
                         clip["output_path"] = uploaded[clip_name]
                     clips_data.append(clip)
 
-            update_supabase(job_id, {
-                "status": "completed",
-                "highlights": highlights_data,
-                "clips": clips_data,
-                "progress": {"current_step": "Complete"},
-                "error": None,
-            })
+            update_supabase(
+                job_id,
+                {
+                    "status": "completed",
+                    "highlights": highlights_data,
+                    "clips": clips_data,
+                    "progress": {"current_step": "Complete"},
+                    "error": None,
+                },
+            )
             logger.info("Job %s completed: %d highlights, %d clips", job_id, len(highlights_data), len(clips_data))
         else:
-            update_supabase(job_id, {
-                "status": "completed",
-                "progress": {"current_step": "Complete (no clips)"},
-            })
+            update_supabase(
+                job_id,
+                {
+                    "status": "completed",
+                    "progress": {"current_step": "Complete (no clips)"},
+                },
+            )
 
     except Exception as e:
         logger.error("Job %s failed: %s", job_id, e, exc_info=True)
-        update_supabase(job_id, {
-            "status": "failed",
-            "error": str(e),
-            "progress": {"current_step": "Failed"},
-        })
+        update_supabase(
+            job_id,
+            {
+                "status": "failed",
+                "error": str(e),
+                "progress": {"current_step": "Failed"},
+            },
+        )
     finally:
         # Clean up temp files
         if local_input and local_input.exists():
