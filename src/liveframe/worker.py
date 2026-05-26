@@ -1,7 +1,8 @@
 """Cloud Run Job worker — runs a single video processing job to completion.
 
-Reads configuration from environment variables, downloads the video from GCS,
-runs the pipeline, uploads clips to GCS, and writes results to Supabase.
+Reads configuration from environment variables, downloads the video from GCS
+or a URL (Twitch/YouTube via yt-dlp), runs the pipeline, uploads clips to GCS,
+and writes results to Supabase.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ import asyncio
 import json
 import logging
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -36,6 +38,37 @@ def download_from_gcs(gcs_uri: str) -> Path:
     blob.download_to_filename(tmp.name)
     logger.info("Downloaded %s to %s (%.1f MB)", gcs_uri, tmp.name, Path(tmp.name).stat().st_size / 1e6)
     return Path(tmp.name)
+
+
+def download_from_url(url: str) -> Path:
+    """Download a video from a URL (Twitch/YouTube/etc.) using yt-dlp."""
+    output_path = Path(tempfile.mkdtemp(prefix="liveframe_ytdl_")) / "video.mp4"
+
+    cmd = [
+        "yt-dlp",
+        "--no-playlist",
+        "--merge-output-format", "mp4",
+        "-o", str(output_path),
+        url,
+    ]
+
+    logger.info("Downloading from URL: %s", url)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+
+    if result.returncode != 0:
+        error_msg = result.stderr.strip().split("\n")[-1] if result.stderr else "yt-dlp failed"
+        raise RuntimeError(f"Download failed: {error_msg}")
+
+    if not output_path.exists():
+        raise RuntimeError("Download completed but output file not found")
+
+    logger.info("Downloaded %s (%.1f MB)", output_path, output_path.stat().st_size / 1e6)
+    return output_path
+
+
+def is_url(path: str) -> bool:
+    """Check if the input path is a URL (not a GCS path or local file)."""
+    return path.startswith("http://") or path.startswith("https://")
 
 
 def upload_clips_to_gcs(job_id: str, output_dir: Path) -> dict[str, str]:
@@ -87,7 +120,7 @@ async def run_job():
     # Update status to analyzing
     update_supabase(job_id, {"status": "analyzing", "progress": {"current_step": "Starting..."}})
 
-    # Download from GCS if needed
+    # Download video from GCS, URL, or use local path
     local_input = None
     if input_path.startswith("gs://"):
         update_supabase(job_id, {"progress": {"current_step": "Downloading video from cloud..."}})
@@ -95,6 +128,18 @@ async def run_job():
             local_input = download_from_gcs(input_path)
         except Exception as e:
             logger.error("GCS download failed: %s", e)
+            update_supabase(job_id, {
+                "status": "failed",
+                "error": f"Download failed: {e}",
+                "progress": {"current_step": "Failed"},
+            })
+            return
+    elif is_url(input_path):
+        update_supabase(job_id, {"progress": {"current_step": "Downloading video from URL..."}})
+        try:
+            local_input = download_from_url(input_path)
+        except Exception as e:
+            logger.error("URL download failed: %s", e)
             update_supabase(job_id, {
                 "status": "failed",
                 "error": f"Download failed: {e}",
