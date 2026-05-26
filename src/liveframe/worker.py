@@ -39,9 +39,18 @@ def download_from_gcs(gcs_uri: str) -> Path:
     return Path(tmp.name)
 
 
-def download_from_url(url: str) -> Path:
-    """Download a video from a URL (Twitch/YouTube/etc.) using yt-dlp."""
-    output_path = Path(tempfile.mkdtemp(prefix="liveframe_ytdl_")) / "video.mp4"
+def download_url_to_gcs(url: str, job_id: str) -> str:
+    """Download a video from a URL via yt-dlp and stream it to GCS.
+
+    Returns the gs:// path. The video is never fully held in container memory —
+    yt-dlp writes to a temp file on disk, which is then streamed to GCS in chunks.
+    """
+    from google.cloud import storage as gcs
+
+    bucket_name = os.environ.get("GCS_BUCKET", "liveframe-uploads")
+    object_name = f"downloads/{job_id}/video.mp4"
+    tmp_dir = tempfile.mkdtemp(prefix="liveframe_ytdl_")
+    output_path = Path(tmp_dir) / "video.mp4"
 
     cmd = [
         "yt-dlp",
@@ -56,7 +65,7 @@ def download_from_url(url: str) -> Path:
     ]
 
     logger.info("Downloading from URL: %s", url)
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
 
     if result.returncode != 0:
         error_msg = result.stderr.strip().split("\n")[-1] if result.stderr else "yt-dlp failed"
@@ -65,8 +74,20 @@ def download_from_url(url: str) -> Path:
     if not output_path.exists():
         raise RuntimeError("Download completed but output file not found")
 
-    logger.info("Downloaded %s (%.1f MB)", output_path, output_path.stat().st_size / 1e6)
-    return output_path
+    file_size = output_path.stat().st_size
+    logger.info("Downloaded to disk (%.1f MB), streaming to GCS...", file_size / 1e6)
+
+    # Stream upload to GCS in chunks (never loads full file into RAM)
+    client = gcs.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(object_name)
+    blob.upload_from_filename(str(output_path), content_type="video/mp4", timeout=3600)
+
+    # Clean up local file immediately
+    output_path.unlink(missing_ok=True)
+    logger.info("Uploaded to gs://%s/%s", bucket_name, object_name)
+
+    return f"gs://{bucket_name}/{object_name}"
 
 
 def is_url(path: str) -> bool:
@@ -143,7 +164,9 @@ async def run_job():
     elif is_url(input_path):
         update_supabase(job_id, {"progress": {"current_step": "Downloading video from URL..."}})
         try:
-            local_input = download_from_url(input_path)
+            # Download from URL → stream to GCS → use GCS path going forward
+            gcs_path = download_url_to_gcs(input_path, job_id)
+            input_path = gcs_path
         except Exception as e:
             logger.error("URL download failed: %s", e)
             update_supabase(
@@ -151,6 +174,22 @@ async def run_job():
                 {
                     "status": "failed",
                     "error": f"Download failed: {e}",
+                    "progress": {"current_step": "Failed"},
+                },
+            )
+            return
+
+        # Now download from GCS to local (pipeline needs a local file)
+        update_supabase(job_id, {"progress": {"current_step": "Preparing video for analysis..."}})
+        try:
+            local_input = download_from_gcs(gcs_path)
+        except Exception as e:
+            logger.error("GCS download failed: %s", e)
+            update_supabase(
+                job_id,
+                {
+                    "status": "failed",
+                    "error": f"Failed to prepare video: {e}",
                     "progress": {"current_step": "Failed"},
                 },
             )
