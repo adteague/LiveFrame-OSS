@@ -12,7 +12,6 @@ import json
 import logging
 import os
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -174,7 +173,6 @@ async def run_job():
     from liveframe.models import JobStatus
 
     try:
-        last_event = None
         async for event in process_video(
             input_path=resolved_input,
             settings=settings,
@@ -182,7 +180,6 @@ async def run_job():
             preset=preset,
             output_dir=output_dir,
         ):
-            last_event = event
 
             # Sync progress to Supabase
             progress_data = {
