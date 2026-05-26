@@ -491,3 +491,4 @@ ruff check src/
 ## License
 
 GPL-3.0-or-later
+
