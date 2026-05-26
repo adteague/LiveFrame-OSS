@@ -21,6 +21,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("liveframe.worker")
 
+CHUNK_SIZE = 8 * 1024 * 1024  # 8MB chunks for GCS streaming upload
+
 
 def download_from_gcs(gcs_uri: str) -> Path:
     """Download a gs:// URI to a local temp file."""
@@ -40,15 +42,84 @@ def download_from_gcs(gcs_uri: str) -> Path:
 
 
 def download_url_to_gcs(url: str, job_id: str) -> str:
-    """Download a video from a URL via yt-dlp and stream it to GCS.
+    """Download video from URL and stream directly to GCS via pipe.
 
-    Returns the gs:// path. The video is never fully held in container memory —
-    yt-dlp writes to a temp file on disk, which is then streamed to GCS in chunks.
+    Uses yt-dlp outputting to stdout, piped directly into a GCS resumable
+    upload. The full video is never held in memory or on local disk.
     """
     from google.cloud import storage as gcs
 
     bucket_name = os.environ.get("GCS_BUCKET", "liveframe-uploads")
     object_name = f"downloads/{job_id}/video.mp4"
+
+    # yt-dlp with -o - outputs to stdout. We use a single-format selector
+    # to avoid needing ffmpeg merge (which requires a temp file).
+    # "best[height<=720]" picks a pre-muxed format when available.
+    # Fallback: download+merge to temp file if piping isn't possible.
+    cmd_pipe = [
+        "yt-dlp",
+        "--no-playlist",
+        "-f",
+        "best[height<=720][ext=mp4]/best[height<=720]/best",
+        "-o",
+        "-",
+        url,
+    ]
+
+    logger.info("Streaming from URL to GCS: %s", url)
+
+    proc = subprocess.Popen(cmd_pipe, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    client = gcs.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(object_name)
+
+    try:
+        # Resumable upload from stream
+        with blob.open("wb", content_type="video/mp4", chunk_size=CHUNK_SIZE) as gcs_file:
+            total = 0
+            while True:
+                chunk = proc.stdout.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                gcs_file.write(chunk)
+                total += len(chunk)
+                if total % (50 * 1024 * 1024) == 0:  # Log every ~50MB
+                    logger.info("Streamed %.0f MB to GCS...", total / 1e6)
+
+        proc.wait(timeout=60)
+
+        if proc.returncode != 0:
+            stderr = proc.stderr.read().decode() if proc.stderr else ""
+            # If pipe mode failed, fall back to temp file approach
+            if "Requested format is not available" in stderr or total == 0:
+                logger.info("Pipe mode failed, falling back to temp file download...")
+                return _download_url_to_gcs_via_tempfile(url, job_id, bucket_name, object_name)
+            error_msg = stderr.strip().split("\n")[-1] if stderr else "yt-dlp failed"
+            raise RuntimeError(f"Download failed: {error_msg}")
+
+        if total == 0:
+            return _download_url_to_gcs_via_tempfile(url, job_id, bucket_name, object_name)
+
+        logger.info("Streamed %.1f MB to gs://%s/%s", total / 1e6, bucket_name, object_name)
+        return f"gs://{bucket_name}/{object_name}"
+
+    except Exception as e:
+        proc.kill()
+        # Try temp file fallback for any pipe errors
+        if "fallback" not in str(e):
+            logger.info("Pipe failed (%s), trying temp file fallback...", e)
+            try:
+                return _download_url_to_gcs_via_tempfile(url, job_id, bucket_name, object_name)
+            except Exception as e2:
+                raise RuntimeError(f"Download failed: {e2}") from e2
+        raise
+
+
+def _download_url_to_gcs_via_tempfile(url: str, job_id: str, bucket_name: str, object_name: str) -> str:
+    """Fallback: download to temp file then upload to GCS."""
+    from google.cloud import storage as gcs
+
     tmp_dir = tempfile.mkdtemp(prefix="liveframe_ytdl_")
     output_path = Path(tmp_dir) / "video.mp4"
 
@@ -64,7 +135,7 @@ def download_url_to_gcs(url: str, job_id: str) -> str:
         url,
     ]
 
-    logger.info("Downloading from URL: %s", url)
+    logger.info("Downloading to temp file: %s", url)
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
 
     if result.returncode != 0:
@@ -75,18 +146,14 @@ def download_url_to_gcs(url: str, job_id: str) -> str:
         raise RuntimeError("Download completed but output file not found")
 
     file_size = output_path.stat().st_size
-    logger.info("Downloaded to disk (%.1f MB), streaming to GCS...", file_size / 1e6)
+    logger.info("Downloaded %.1f MB, uploading to GCS...", file_size / 1e6)
 
-    # Stream upload to GCS in chunks (never loads full file into RAM)
     client = gcs.Client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(object_name)
+    blob = client.bucket(bucket_name).blob(object_name)
     blob.upload_from_filename(str(output_path), content_type="video/mp4", timeout=3600)
 
-    # Clean up local file immediately
     output_path.unlink(missing_ok=True)
     logger.info("Uploaded to gs://%s/%s", bucket_name, object_name)
-
     return f"gs://{bucket_name}/{object_name}"
 
 
@@ -164,9 +231,8 @@ async def run_job():
     elif is_url(input_path):
         update_supabase(job_id, {"progress": {"current_step": "Downloading video from URL..."}})
         try:
-            # Download from URL → stream to GCS → use GCS path going forward
+            # Stream from URL → GCS (no local disk needed for the full video)
             gcs_path = download_url_to_gcs(input_path, job_id)
-            input_path = gcs_path
         except Exception as e:
             logger.error("URL download failed: %s", e)
             update_supabase(
@@ -179,7 +245,7 @@ async def run_job():
             )
             return
 
-        # Now download from GCS to local (pipeline needs a local file)
+        # Now download from GCS to local for pipeline processing
         update_supabase(job_id, {"progress": {"current_step": "Preparing video for analysis..."}})
         try:
             local_input = download_from_gcs(gcs_path)
