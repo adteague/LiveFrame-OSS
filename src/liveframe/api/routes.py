@@ -119,6 +119,27 @@ def load_persisted_jobs() -> None:
 # --- Pipeline Runner ---
 
 
+_CLIPS_BUCKET = "liveframe-uploads"  # Reuse the same bucket, different prefix
+
+
+def _upload_clips_to_gcs(job: Job) -> None:
+    """Upload completed clips to GCS and update clip paths to gs:// URIs."""
+    from google.cloud import storage as gcs
+
+    client = gcs.Client()
+    bucket = client.bucket(_CLIPS_BUCKET)
+
+    for clip in job.clips:
+        local_path = Path(clip.output_path)
+        if not local_path.exists():
+            continue
+        object_name = f"clips/{job.id}/{local_path.name}"
+        blob = bucket.blob(object_name)
+        blob.upload_from_filename(str(local_path))
+        clip.output_path = Path(f"gs://{_CLIPS_BUCKET}/{object_name}")
+        logger.info("Uploaded clip to gs://%s/%s", _CLIPS_BUCKET, object_name)
+
+
 def _download_from_gcs(gcs_uri: str) -> Path:
     """Download a gs:// URI to a local temp file. Returns the local path."""
     import tempfile
@@ -213,6 +234,13 @@ async def _run_job(job: Job, settings: LiveframeSettings) -> None:
             # Sync highlights from manifest when available
             if event.status in (JobStatus.EXTRACTING, JobStatus.COMPLETED):
                 _sync_manifest(job, input_path, output_dir)
+
+            # Upload clips to GCS when complete
+            if event.status == JobStatus.COMPLETED and job.clips:
+                try:
+                    await asyncio.to_thread(_upload_clips_to_gcs, job)
+                except Exception as e:
+                    logger.warning("Failed to upload clips to GCS: %s", e)
 
             # Persist after every progress update
             _save_job(job)
@@ -320,6 +348,51 @@ async def get_clips(job_id: str) -> list[ExtractedClip]:
     if job.progress.status != JobStatus.COMPLETED:
         raise HTTPException(status_code=409, detail="Job not yet completed")
     return job.clips
+
+
+@router.get("/jobs/{job_id}/clips/{clip_index}/download")
+async def download_clip(job_id: str, clip_index: int):
+    """Get a signed download URL for a completed clip."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    clip = None
+    for c in job.clips:
+        if c.highlight.index == clip_index:
+            clip = c
+            break
+
+    if not clip:
+        raise HTTPException(status_code=404, detail=f"Clip {clip_index} not found")
+
+    clip_path = str(clip.output_path)
+
+    # If clip is on GCS, generate a signed download URL
+    if clip_path.startswith("gs://"):
+        from google.cloud import storage as gcs
+
+        parts = clip_path.replace("gs://", "").split("/", 1)
+        bucket_name, object_name = parts[0], parts[1]
+
+        client = gcs.Client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(object_name)
+
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=3600,  # 1 hour
+            method="GET",
+        )
+        return {"download_url": url, "filename": Path(object_name).name}
+
+    # Local file fallback
+    from fastapi.responses import FileResponse
+
+    local_path = Path(clip_path)
+    if not local_path.exists():
+        raise HTTPException(status_code=404, detail="Clip file not found")
+    return FileResponse(local_path, media_type="video/mp4", filename=local_path.name)
 
 
 @router.delete("/jobs/{job_id}", status_code=204, response_model=None)
