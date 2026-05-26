@@ -119,6 +119,27 @@ def load_persisted_jobs() -> None:
 # --- Pipeline Runner ---
 
 
+def _download_from_gcs(gcs_uri: str) -> Path:
+    """Download a gs:// URI to a local temp file. Returns the local path."""
+    import tempfile
+
+    from google.cloud import storage as gcs
+
+    # Parse gs://bucket/object
+    parts = gcs_uri.replace("gs://", "").split("/", 1)
+    bucket_name, object_name = parts[0], parts[1]
+
+    client = gcs.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(object_name)
+
+    suffix = Path(object_name).suffix or ".mp4"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="liveframe_dl_")
+    blob.download_to_filename(tmp.name)
+    logger.info("Downloaded %s to %s (%.1f MB)", gcs_uri, tmp.name, Path(tmp.name).stat().st_size / 1e6)
+    return Path(tmp.name)
+
+
 async def _run_job(job: Job, settings: LiveframeSettings) -> None:
     """Background task that runs the processing pipeline for a job."""
     req = job.request
@@ -164,9 +185,24 @@ async def _run_job(job: Job, settings: LiveframeSettings) -> None:
 
     output_dir = Path(req.output_dir) if req.output_dir else None
 
+    # Download from GCS if needed
+    local_input = None
+    if req.input_path.startswith("gs://"):
+        job.progress = ProgressEvent(status=JobStatus.PENDING, current_step="Downloading video from cloud...")
+        _save_job(job)
+        try:
+            local_input = await asyncio.to_thread(_download_from_gcs, req.input_path)
+        except Exception as e:
+            logger.error("GCS download failed for job %s: %s", job.id, e)
+            job.progress = ProgressEvent(status=JobStatus.FAILED, current_step="Failed", error=f"Download failed: {e}")
+            _save_job(job)
+            return
+
+    input_path = local_input or Path(req.input_path)
+
     try:
         async for event in process_video(
-            input_path=Path(req.input_path),
+            input_path=input_path,
             settings=job_settings,
             criteria=criteria,
             preset=preset,
@@ -176,7 +212,7 @@ async def _run_job(job: Job, settings: LiveframeSettings) -> None:
 
             # Sync highlights from manifest when available
             if event.status in (JobStatus.EXTRACTING, JobStatus.COMPLETED):
-                _sync_manifest(job, Path(req.input_path), output_dir)
+                _sync_manifest(job, input_path, output_dir)
 
             # Persist after every progress update
             _save_job(job)
@@ -188,6 +224,11 @@ async def _run_job(job: Job, settings: LiveframeSettings) -> None:
         logger.error("Job %s failed: %s", job.id, e)
         job.progress = ProgressEvent(status=JobStatus.FAILED, current_step="Failed", error=str(e))
         _save_job(job)
+    finally:
+        # Clean up GCS download temp file
+        if local_input and local_input.exists():
+            local_input.unlink(missing_ok=True)
+            logger.info("Cleaned up temp file %s", local_input)
 
 
 def _sync_manifest(job: Job, input_path: Path, output_dir: Path | None) -> None:
@@ -228,9 +269,11 @@ async def create_job(
     settings: LiveframeSettings = Depends(get_settings),
 ) -> JobResponse:
     """Submit a new video processing job."""
-    input_path = Path(request.input_path)
-    if not input_path.exists():
-        raise HTTPException(status_code=400, detail=f"Input file not found: {request.input_path}")
+    # Accept both local paths and gs:// URIs
+    if not request.input_path.startswith("gs://"):
+        input_path = Path(request.input_path)
+        if not input_path.exists():
+            raise HTTPException(status_code=400, detail=f"Input file not found: {request.input_path}")
 
     job_id = str(uuid.uuid4())[:8]
     job = Job(id=job_id, request=request)
