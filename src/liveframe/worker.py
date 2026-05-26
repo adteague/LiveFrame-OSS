@@ -48,6 +48,8 @@ def download_from_url(url: str) -> Path:
         "--no-playlist",
         "--merge-output-format",
         "mp4",
+        "-f",
+        "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
         "-o",
         str(output_path),
         url,
