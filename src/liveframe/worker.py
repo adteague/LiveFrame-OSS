@@ -60,21 +60,30 @@ def download_url_to_gcs(url: str, job_id: str, update_fn=None) -> str:
 
     bucket_name = os.environ.get("GCS_BUCKET", "liveframe-uploads")
     object_name = f"downloads/{job_id}/video.mp4"
-    tmp_dir = tempfile.mkdtemp(prefix="liveframe_ytdl_", dir=SCRATCH_DIR)
-    output_path = Path(tmp_dir) / "video.mp4"
 
+    # Use /tmp (RAM) for the final output since ffmpeg merge needs random writes.
+    # GCS FUSE only supports sequential writes.
+    # Download fragments go to SCRATCH_DIR (GCS FUSE) to save RAM.
+    output_dir = tempfile.mkdtemp(prefix="liveframe_ytdl_")
+    output_path = Path(output_dir) / "video.mp4"
+
+    # Prefer pre-muxed formats (no merge needed). Fall back to separate streams.
     cmd = [
         "yt-dlp",
         "--no-playlist",
         "--merge-output-format",
         "mp4",
         "-f",
-        "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+        "best[height<=720][ext=mp4]/best[height<=720]/bestvideo[height<=720]+bestaudio/best",
         "--no-part",
         "-o",
         str(output_path),
         url,
     ]
+
+    # Use GCS FUSE for fragment cache (large sequential writes)
+    if SCRATCH_DIR:
+        cmd.extend(["--paths", f"temp:{SCRATCH_DIR}"])
 
     logger.info("Downloading from URL: %s", url)
 
