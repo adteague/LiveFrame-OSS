@@ -25,7 +25,12 @@ CHUNK_SIZE = 8 * 1024 * 1024  # 8MB chunks for GCS streaming upload
 
 # Use GCS FUSE mount for temp files (disk-backed, not RAM)
 # Falls back to /tmp if mount not available (local dev)
-SCRATCH_DIR = "/mnt/scratch/tmp" if os.path.isdir("/mnt/scratch") else None
+_FUSE_MOUNT = "/mnt/scratch"
+if os.path.isdir(_FUSE_MOUNT):
+    SCRATCH_DIR = f"{_FUSE_MOUNT}/tmp"
+    os.makedirs(SCRATCH_DIR, exist_ok=True)
+else:
+    SCRATCH_DIR = None
 
 
 def download_from_gcs(gcs_uri: str) -> Path:
