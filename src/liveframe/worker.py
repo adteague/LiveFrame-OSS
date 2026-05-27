@@ -23,6 +23,10 @@ logger = logging.getLogger("liveframe.worker")
 
 CHUNK_SIZE = 8 * 1024 * 1024  # 8MB chunks for GCS streaming upload
 
+# Use GCS FUSE mount for temp files (disk-backed, not RAM)
+# Falls back to /tmp if mount not available (local dev)
+SCRATCH_DIR = "/mnt/scratch/tmp" if os.path.isdir("/mnt/scratch") else None
+
 
 def download_from_gcs(gcs_uri: str) -> Path:
     """Download a gs:// URI to a local temp file."""
@@ -35,7 +39,7 @@ def download_from_gcs(gcs_uri: str) -> Path:
     blob = client.bucket(bucket_name).blob(object_name)
 
     suffix = Path(object_name).suffix or ".mp4"
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="liveframe_dl_")
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix="liveframe_dl_", dir=SCRATCH_DIR)
     blob.download_to_filename(tmp.name)
     logger.info("Downloaded %s to %s (%.1f MB)", gcs_uri, tmp.name, Path(tmp.name).stat().st_size / 1e6)
     return Path(tmp.name)
@@ -51,7 +55,7 @@ def download_url_to_gcs(url: str, job_id: str, update_fn=None) -> str:
 
     bucket_name = os.environ.get("GCS_BUCKET", "liveframe-uploads")
     object_name = f"downloads/{job_id}/video.mp4"
-    tmp_dir = tempfile.mkdtemp(prefix="liveframe_ytdl_")
+    tmp_dir = tempfile.mkdtemp(prefix="liveframe_ytdl_", dir=SCRATCH_DIR)
     output_path = Path(tmp_dir) / "video.mp4"
 
     cmd = [
@@ -112,24 +116,66 @@ def is_url(path: str) -> bool:
     return path.startswith("http://") or path.startswith("https://")
 
 
-def upload_clips_to_gcs(job_id: str, output_dir: Path) -> dict[str, str]:
-    """Upload all clips in output_dir to GCS. Returns {local_name: gs_path}."""
+def _generate_clip_thumbnail(clip_path: Path) -> Path | None:
+    """Extract a thumbnail frame from a clip at 25% in."""
+    thumb_path = clip_path.parent / f".thumb_{clip_path.stem}.jpg"
+    try:
+        # Get duration
+        probe = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", str(clip_path)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        duration = float(probe.stdout.strip()) if probe.stdout.strip() else 5.0
+        seek = duration * 0.25
+
+        subprocess.run(
+            ["ffmpeg", "-y", "-ss", str(seek), "-i", str(clip_path), "-frames:v", "1", "-q:v", "5", str(thumb_path)],
+            capture_output=True,
+            timeout=15,
+        )
+        return thumb_path if thumb_path.exists() else None
+    except Exception:
+        return None
+
+
+def upload_clips_to_gcs(job_id: str, output_dir: Path) -> tuple[dict[str, str], dict[str, str]]:
+    """Upload clips + thumbnails to GCS. Returns (clip_paths, thumb_urls)."""
     from google.cloud import storage as gcs
 
     bucket_name = os.environ.get("GCS_BUCKET", "liveframe-uploads")
     client = gcs.Client()
     bucket = client.bucket(bucket_name)
     uploaded = {}
+    thumbnails = {}
 
     for clip_file in output_dir.glob("clip_*.mp4"):
+        # Upload clip
         object_name = f"clips/{job_id}/{clip_file.name}"
         blob = bucket.blob(object_name)
         blob.upload_from_filename(str(clip_file))
         gcs_path = f"gs://{bucket_name}/{object_name}"
         uploaded[clip_file.name] = gcs_path
+
+        # Generate and upload thumbnail
+        thumb = _generate_clip_thumbnail(clip_file)
+        if thumb:
+            thumb_object = f"clips/{job_id}/thumbs/{clip_file.stem}.jpg"
+            thumb_blob = bucket.blob(thumb_object)
+            thumb_blob.upload_from_filename(str(thumb))
+            # Generate a signed read URL (7 days)
+            thumb_url = thumb_blob.generate_signed_url(
+                version="v4",
+                expiration=7 * 24 * 3600,
+                method="GET",
+            )
+            thumbnails[clip_file.name] = thumb_url
+            thumb.unlink(missing_ok=True)
+
         logger.info("Uploaded %s -> %s", clip_file.name, gcs_path)
 
-    return uploaded
+    return uploaded, thumbnails
 
 
 def update_supabase(job_id: str, updates: dict):
@@ -231,7 +277,8 @@ async def run_job():
     except ValueError:
         pass
 
-    output_dir = Path(f"/tmp/liveframe_output/{job_id}")
+    scratch = SCRATCH_DIR or "/tmp"
+    output_dir = Path(f"{scratch}/liveframe_output/{job_id}")
 
     # Run pipeline
     from liveframe.core.pipeline import process_video
@@ -285,7 +332,7 @@ async def run_job():
         # Upload clips to GCS
         if output_dir.exists():
             update_supabase(job_id, {"progress": {"current_step": "Uploading clips..."}})
-            uploaded = upload_clips_to_gcs(job_id, output_dir)
+            uploaded, thumbnails = upload_clips_to_gcs(job_id, output_dir)
 
             # Read final manifest for clips metadata
             manifest_path = output_dir / "manifest.json"
@@ -298,6 +345,8 @@ async def run_job():
                     clip_name = Path(clip["output_path"]).name
                     if clip_name in uploaded:
                         clip["output_path"] = uploaded[clip_name]
+                    if clip_name in thumbnails:
+                        clip["thumbnail_url"] = thumbnails[clip_name]
                     clips_data.append(clip)
 
             update_supabase(
