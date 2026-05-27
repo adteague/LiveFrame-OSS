@@ -24,8 +24,9 @@ async def probe_video(path: Path) -> VideoInfo:
         raise VideoFileError(f"Video file not found: {path}")
     if not path.is_file():
         raise VideoFileError(f"Not a file: {path}")
-    if path.suffix.lower() != ".mp4":
-        raise VideoFileError(f"Unsupported format '{path.suffix}'. Only .mp4 is supported.")
+    supported = {".mp4", ".ts", ".mkv", ".mov", ".avi", ".webm", ".flv"}
+    if path.suffix.lower() not in supported:
+        raise VideoFileError(f"Unsupported format '{path.suffix}'. Supported: {', '.join(supported)}")
 
     cmd = [
         "ffprobe",
