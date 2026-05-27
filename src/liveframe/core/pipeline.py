@@ -65,7 +65,7 @@ async def process_video(
         chunks = compute_chunks(video.duration_seconds, settings, video.file_size_bytes)
         logger.info("Video split into %d analysis chunk(s)", len(chunks))
 
-        # Step 3: Split chunks sequentially (one at a time to avoid CPU overload)
+        # Step 3: Split chunks in parallel (utilize all available CPU cores)
         needs_split = len(chunks) > 1 or video.file_size_bytes > 2 * 1024 * 1024 * 1024
         # Also split if FPS reduction is requested (even single chunk needs re-encoding)
         needs_reencode = settings.analysis_fps > 0 or settings.downscale_for_analysis
@@ -79,17 +79,23 @@ async def process_video(
                 status=JobStatus.ANALYZING,
                 chunks_total=len(chunks),
                 chunks_completed=0,
-                current_step=f"Splitting video into {len(chunks)} chunks...",
+                current_step=f"Splitting {len(chunks)} chunks in parallel...",
             )
 
-            for chunk_window in chunks:
-                chunk_file = await split_chunk(
+            # Run all chunk splits concurrently
+            split_tasks = [
+                split_chunk(
                     input_path,
                     chunk_window,
                     tmp_dir,
                     downscale=settings.downscale_for_analysis,
                     analysis_fps=settings.analysis_fps,
                 )
+                for chunk_window in chunks
+            ]
+            results = await asyncio.gather(*split_tasks)
+
+            for chunk_window, chunk_file in zip(chunks, results):
                 chunk_files[chunk_window.index] = chunk_file
                 logger.info(
                     "Split chunk %d/%d: %s (%.1f MB)",
