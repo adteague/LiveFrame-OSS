@@ -81,15 +81,16 @@ PRESET_CRITERIA_TEXT: dict[PresetCriteria, str] = {
 }
 
 # Token costs per second of video at each analysis mode
-# Conservative estimates to avoid exceeding Gemini's 1M token context window.
-# At 720p 2fps, actual usage is ~150 tokens/sec.
+# Very conservative — Gemini's actual tokenization of 720p 2fps video
+# can vary significantly. Using 200 tokens/sec to ensure chunks stay
+# well under the 1M context window.
 _TOKENS_PER_SECOND = {
-    AnalysisMode.FAST: 150.0,
-    AnalysisMode.DETAILED: 400.0,
+    AnalysisMode.FAST: 200.0,
+    AnalysisMode.DETAILED: 500.0,
 }
 
-# Reserve tokens for prompt + response
-_RESERVED_TOKENS = 100_000
+# Reserve tokens for prompt + response (generous buffer)
+_RESERVED_TOKENS = 150_000
 _CONTEXT_WINDOW = 1_000_000
 
 
