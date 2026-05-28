@@ -47,9 +47,10 @@ async def process_video(
         output_dir: Where to write clips. Defaults to ./liveframe_output/<video_stem>.
         dry_run: If True, analyze only — no clip extraction.
     """
-    # Resolve output directory
+    # Resolve output directory (use absolute path so it works regardless of cwd)
     if output_dir is None:
         output_dir = Path("liveframe_output") / input_path.stem
+    output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     highlights: list[DeduplicatedHighlight] = []
