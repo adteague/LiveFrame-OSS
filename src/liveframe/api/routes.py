@@ -119,7 +119,6 @@ def load_persisted_jobs() -> None:
 # --- Pipeline Runner ---
 
 
-
 def _download_from_gcs(gcs_uri: str) -> Path:
     """Download a gs:// URI to a local temp file. Returns the local path."""
     import tempfile
@@ -741,15 +740,17 @@ async def list_renders(job_id: str, clip_index: int):
     stem = raw_path.stem
     for f in sorted(rendered_dir.glob(f"{stem}_*.mp4")):
         # Extract ratio tag from filename (e.g., clip_001_..._16x9.mp4 -> 16:9)
-        ratio_tag = f.stem[len(stem) + 1:]
+        ratio_tag = f.stem[len(stem) + 1 :]
         ratio = ratio_tag.replace("x", ":")
         size_mb = f.stat().st_size / (1024 * 1024)
-        renders.append({
-            "filename": f.name,
-            "path": str(f),
-            "ratio": ratio,
-            "size_mb": round(size_mb, 1),
-        })
+        renders.append(
+            {
+                "filename": f.name,
+                "path": str(f),
+                "ratio": ratio,
+                "size_mb": round(size_mb, 1),
+            }
+        )
 
     return renders
 
