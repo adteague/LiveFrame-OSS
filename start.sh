@@ -108,6 +108,29 @@ if [ "$has_key" = false ]; then
     fi
 fi
 
+# -- Open browser when server is ready -----------------------------------------
+open_browser() {
+    local url="$1"
+    if command -v open &>/dev/null; then
+        open "$url"                    # macOS
+    elif command -v xdg-open &>/dev/null; then
+        xdg-open "$url"               # Linux
+    elif command -v wslview &>/dev/null; then
+        wslview "$url"                 # WSL
+    fi
+}
+
+wait_and_open() {
+    for _ in $(seq 1 30); do
+        if curl -sf http://localhost:8000/health >/dev/null 2>&1; then
+            open_browser "http://localhost:8000"
+            return
+        fi
+        sleep 0.5
+    done
+    warn "Server didn't respond in time -- open http://localhost:8000 manually"
+}
+
 # -- Launch server -------------------------------------------------------------
 if [ "$NEEDS_SETUP" = true ]; then
     echo ""
@@ -116,8 +139,8 @@ fi
 
 echo ""
 info "Starting Liveframe server on http://localhost:8000"
-info "API docs at http://localhost:8000/docs"
 info "Press Ctrl+C to stop"
 echo ""
 
+wait_and_open &
 exec liveframe serve "$@"
