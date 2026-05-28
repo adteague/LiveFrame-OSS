@@ -14,9 +14,17 @@ Feed Liveframe a 5+ hour stream VOD and it will:
 
 ## Quick Start
 
+### Guided setup (recommended)
+
 ```bash
-git clone https://github.com/your-username/vugola.git
-cd vugola
+bash setup.sh
+```
+
+This checks prerequisites, creates a virtual environment, installs Liveframe, and walks you through configuring your API key.
+
+### Manual setup
+
+```bash
 python3 -m venv .venv && source .venv/bin/activate  # see below for Windows
 pip install -e .
 cp .env.example .env   # then add your GEMINI_API_KEY
