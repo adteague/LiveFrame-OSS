@@ -701,6 +701,7 @@
     let speakerSettings = {};   // {clip_index: {speaker_id: {color, enabled}}}
     let clipIntroOutro = {};    // {clip_index: {intro: path, outro: path}}
     let sessionDefaults = { intro_path: null, outro_path: null };
+    let diarizationAvailable = false;
     const DEFAULT_SPEAKER_COLORS = ['#00e676', '#64b5f6', '#ffb74d', '#ce93d8', '#f06292', '#4dd0e1', '#fff176', '#81c784'];
 
     /* ═══════════════════════════════════════
@@ -973,6 +974,13 @@
 
             editorHighlights = job.highlights || [];
             editorClips = job.clips || [];
+
+            // Check diarization availability
+            try {
+                const hRes = await fetch('/health');
+                const health = await hRes.json();
+                diarizationAvailable = health.diarization === 'ok';
+            } catch(e) { diarizationAvailable = false; }
 
             // Reset per-session state
             clipIntroOutro = {};
@@ -1325,8 +1333,33 @@
 
     function onDiarizeToggle() {
         const enabled = document.getElementById('capDiarize').checked;
-        document.getElementById('speakersPanel').style.display = enabled ? 'block' : 'none';
-        if (enabled && activeClipIndex >= 0 && detectedSpeakers[activeClipIndex]) {
+        const panel = document.getElementById('speakersPanel');
+
+        if (enabled && !diarizationAvailable) {
+            panel.style.display = 'block';
+            panel.innerHTML = `<div style="padding:0.6rem 0.8rem;background:rgba(255,181,77,0.08);border:1px solid rgba(255,181,77,0.25);border-radius:6px;font-size:0.8rem;color:var(--orange);margin-top:0.5rem">
+                Speaker diarization requires <code>pyannote.audio</code>.<br>
+                To install, run in your terminal:<br>
+                <code style="display:block;margin-top:0.3rem;padding:0.3rem 0.5rem;background:var(--surface-2);border-radius:4px;color:var(--text)">pip install -e ".[diarize]"</code>
+                <div style="margin-top:0.3rem;font-size:0.7rem;color:var(--text-dim)">Then restart the server. This is a large download (~2 GB).</div>
+            </div>`;
+            return;
+        }
+
+        panel.style.display = enabled ? 'block' : 'none';
+        if (!enabled) return;
+
+        // Restore normal panel content if it was replaced by the install notice
+        if (!panel.querySelector('#detectSpeakersBtn')) {
+            panel.innerHTML = `<div class="form-group">
+                <label>HuggingFace Token <a href="https://hf.co/settings/tokens" target="_blank">Get a token</a></label>
+                <input type="password" id="capHfToken" placeholder="Required for diarization. Or set LIVEFRAME_HF_TOKEN in .env">
+            </div>
+            <button class="btn btn-sm btn-secondary" id="detectSpeakersBtn" onclick="detectSpeakers()" style="width:100%">Detect Speakers</button>
+            <div class="speakers-list" id="speakersList"></div>`;
+        }
+
+        if (activeClipIndex >= 0 && detectedSpeakers[activeClipIndex]) {
             renderSpeakersList();
         }
     }

@@ -529,6 +529,14 @@ async def health_check() -> dict:
     ffprobe_ok = shutil.which("ffprobe") is not None
     api_key_set = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("LIVEFRAME_GEMINI_API_KEY"))
 
+    # Check if pyannote.audio is installed for speaker diarization
+    try:
+        import pyannote.audio  # noqa: F401
+
+        diarization_ok = True
+    except ImportError:
+        diarization_ok = False
+
     healthy = ffmpeg_ok and ffprobe_ok and api_key_set
 
     return {
@@ -536,6 +544,7 @@ async def health_check() -> dict:
         "ffmpeg": "ok" if ffmpeg_ok else "not found",
         "ffprobe": "ok" if ffprobe_ok else "not found",
         "gemini_api_key": "configured" if api_key_set else "missing",
+        "diarization": "ok" if diarization_ok else "not installed",
     }
 
 

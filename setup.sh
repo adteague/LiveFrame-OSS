@@ -101,9 +101,23 @@ source "$VENV_DIR/bin/activate"
 ok "Activated virtual environment"
 
 # ── Step 4: Install Liveframe ─────────────────────────────────────────────
-info "Installing Liveframe (with caption support)..."
-pip install -e "$SCRIPT_DIR[captions]" --quiet 2>&1 | tail -1
-ok "Liveframe installed"
+echo ""
+printf "Install speaker diarization? (identifies who is talking)\n"
+printf "  This is a large download (~2 GB) and requires a HuggingFace token.\n"
+printf "  You can always install it later with: pip install -e \".[diarize]\"\n"
+echo ""
+printf "Install diarization? [y/N]: "
+read -r INSTALL_DIARIZE
+
+if [ "$INSTALL_DIARIZE" = "y" ] || [ "$INSTALL_DIARIZE" = "Y" ]; then
+    info "Installing Liveframe (with captions + diarization)..."
+    pip install -e "$SCRIPT_DIR[diarize]" --quiet 2>&1 | tail -1
+    ok "Liveframe installed (with diarization)"
+else
+    info "Installing Liveframe (with caption support)..."
+    pip install -e "$SCRIPT_DIR[captions]" --quiet 2>&1 | tail -1
+    ok "Liveframe installed"
+fi
 
 # Verify CLI
 if command -v liveframe &>/dev/null; then
