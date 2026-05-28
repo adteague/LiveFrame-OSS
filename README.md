@@ -167,46 +167,6 @@ All settings use the `LIVEFRAME_` prefix as environment variables or in your `.e
 
 ## Usage
 
-### Full Pipeline (analyze + extract)
-
-```bash
-liveframe run stream.mp4
-```
-
-### Import from URL (Twitch, YouTube, etc.)
-
-When using the hosted platform, you can paste a URL directly instead of uploading a file. The worker downloads the video using [yt-dlp](https://github.com/yt-dlp/yt-dlp).
-
-**Supported platforms include:**
-
-| Platform | Example URL |
-|----------|-------------|
-| Twitch VODs | `https://www.twitch.tv/videos/123456789` |
-| Twitch Clips | `https://clips.twitch.tv/ClipName` |
-| YouTube | `https://www.youtube.com/watch?v=dQw4w9WgXcQ` |
-| Kick VODs | `https://kick.com/streamer/video/123` |
-| Facebook | `https://www.facebook.com/watch/?v=123` |
-| Instagram | `https://www.instagram.com/reel/ABC123/` |
-| TikTok | `https://www.tiktok.com/@user/video/123` |
-| X / Twitter | `https://x.com/user/status/123` |
-| Vimeo | `https://vimeo.com/123456789` |
-| Reddit | `https://www.reddit.com/r/sub/comments/abc/` |
-| Dailymotion | `https://www.dailymotion.com/video/x123` |
-| Rumble | `https://rumble.com/v123-title.html` |
-| Streamable | `https://streamable.com/abc123` |
-| Medal.tv | `https://medal.tv/games/clip/123` |
-
-And [1,000+ more platforms](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) supported by yt-dlp.
-
-For the CLI, you can use yt-dlp directly:
-
-```bash
-yt-dlp -o stream.mp4 "https://www.twitch.tv/videos/123456789"
-liveframe run stream.mp4
-```
-
-Clips are saved to `./liveframe_output/<video_name>/`.
-
 ### Common Options
 
 ```bash
