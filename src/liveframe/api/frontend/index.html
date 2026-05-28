@@ -1125,17 +1125,17 @@
         el.style.fontFamily = `"${fontName}", -apple-system, sans-serif`;
 
         // Build preview text based on style, with profanity censor on last word
-        const lastWord = censor ? '****' : 'shot';
+        const lastWord = censor ? '****' : 'Text';
 
         if (style === 'opus') {
             // Opus: word-by-word pop, highlighted word is accent color
-            el.innerHTML = `<span style="color:${textColor}">nice </span><span style="color:${highlightColor}">${lastWord}</span>`;
+            el.innerHTML = `<span style="color:${textColor}">Caption </span><span style="color:${highlightColor}">${lastWord}</span>`;
         } else if (style === 'karaoke') {
             // Karaoke: all words visible, current word highlighted
-            el.innerHTML = `<span style="color:${textColor}">what a </span><span style="color:${highlightColor}">nice</span><span style="color:${textColor}"> ${lastWord}</span>`;
+            el.innerHTML = `<span style="color:${textColor}">Sample </span><span style="color:${highlightColor}">Caption</span><span style="color:${textColor}"> ${lastWord}</span>`;
         } else if (style === 'subtitle') {
             // Subtitle: full line, no highlight
-            el.innerHTML = `<span style="color:${textColor}">what a nice ${lastWord}</span>`;
+            el.innerHTML = `<span style="color:${textColor}">Sample Caption ${lastWord}</span>`;
             el.style.fontSize = `${px * 0.7}px`;
         } else if (style === 'minimal') {
             // Minimal: single word, text color only
