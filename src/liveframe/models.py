@@ -209,6 +209,8 @@ class JobRequest(BaseModel):
     margin_seconds: float = 3.0
     analysis_mode: str = "fast"
     accurate_cuts: bool = False
+    captions: bool = False
+    caption_model_size: str = "base"
     api_key: str | None = None
     openai_api_key: str | None = None
 
