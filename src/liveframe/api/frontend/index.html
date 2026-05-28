@@ -761,10 +761,13 @@
             let statusText = job.status;
 
             let progressHtml = '';
-            if (['analyzing','extracting','pending'].includes(job.status) && p.chunks_total > 0) {
-                const pct = job.status === 'extracting'
-                    ? (p.clips_extracted / Math.max(p.clips_total, 1)) * 100
-                    : (p.chunks_completed / p.chunks_total) * 100;
+            if (['analyzing','extracting','pending'].includes(job.status)) {
+                let pct = 0;
+                if (job.status === 'extracting' && p.clips_total > 0) {
+                    pct = (p.clips_extracted / p.clips_total) * 100;
+                } else if (p.chunks_total > 0) {
+                    pct = (p.chunks_completed / p.chunks_total) * 100;
+                }
                 progressHtml = `<div class="progress-bar-track"><div class="progress-bar-fill" style="width:${pct}%"></div></div>`;
                 startPolling(job.job_id);
             }
