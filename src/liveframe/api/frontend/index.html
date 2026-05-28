@@ -473,6 +473,7 @@
                                 <div class="render-status" id="renderStatus" style="flex:1;margin:0"></div>
                             </div>
                             <div id="clipDetails" style="font-size:0.75rem; color:var(--text-dim); line-height:1.5; margin-top:0.75rem"></div>
+                            <div id="previousRenders" style="margin-top:0.75rem"></div>
                         </div>
                     </div>
 
@@ -1095,31 +1096,53 @@
         const enabled = document.getElementById('capEnabled').checked;
         if (!enabled) { el.style.display = 'none'; return; }
 
-        // Sample placeholder
         el.style.display = 'block';
-        el.textContent = 'Caption Preview';
 
         const fontSize = parseFloat(document.getElementById('capSize').value);
         const position = parseFloat(document.getElementById('capPosition').value);
         const textColor = document.getElementById('capTextColor').value;
         const highlightColor = document.getElementById('capHighlightColor').value;
         const shadowColor = document.getElementById('capShadowColor').value;
-        const fontPath = document.getElementById('capFont').value;
         const fontSelect = document.getElementById('capFont');
         const fontName = fontSelect.options[fontSelect.selectedIndex]?.text || 'sans-serif';
+        const style = document.getElementById('capStyle').value;
+        const censor = document.getElementById('capCensor').checked;
 
         const frame = document.getElementById('previewFrame');
         const frameHeight = frame.clientHeight;
-        el.style.fontSize = `${Math.max(12, fontSize * frameHeight)}px`;
+        const px = Math.max(12, fontSize * frameHeight);
+
+        el.style.fontSize = `${px}px`;
         el.style.top = `${position * 100}%`;
-        el.style.color = highlightColor;
         el.style.fontFamily = `"${fontName}", -apple-system, sans-serif`;
 
+        // Build preview text based on style, with profanity censor on last word
+        const lastWord = censor ? '****' : 'shot';
+
+        if (style === 'opus') {
+            // Opus: word-by-word pop, highlighted word is accent color
+            el.innerHTML = `<span style="color:${textColor}">nice </span><span style="color:${highlightColor}">${lastWord}</span>`;
+        } else if (style === 'karaoke') {
+            // Karaoke: all words visible, current word highlighted
+            el.innerHTML = `<span style="color:${textColor}">what a </span><span style="color:${highlightColor}">nice</span><span style="color:${textColor}"> ${lastWord}</span>`;
+        } else if (style === 'subtitle') {
+            // Subtitle: full line, no highlight
+            el.innerHTML = `<span style="color:${textColor}">what a nice ${lastWord}</span>`;
+            el.style.fontSize = `${px * 0.7}px`;
+        } else if (style === 'minimal') {
+            // Minimal: single word, text color only
+            el.innerHTML = `<span style="color:${textColor}">${lastWord}</span>`;
+        }
+
         const sc = shadowColor;
-        el.style.textShadow =
-            `2px 2px 0 ${sc}, -2px 2px 0 ${sc},` +
-            `2px -2px 0 ${sc}, -2px -2px 0 ${sc},` +
-            `0 3px 0 ${sc}, 3px 0 0 ${sc}`;
+        if (style === 'subtitle') {
+            el.style.textShadow = `1px 1px 3px ${sc}`;
+        } else {
+            el.style.textShadow =
+                `2px 2px 0 ${sc}, -2px 2px 0 ${sc},` +
+                `2px -2px 0 ${sc}, -2px -2px 0 ${sc},` +
+                `0 3px 0 ${sc}, 3px 0 0 ${sc}`;
+        }
     }
 
     function updatePreviewWatermark() {
@@ -1231,8 +1254,33 @@
         // Refresh intro/outro display for active clip
         updateIntroOutroDisplay();
 
+        // Load previous renders for this clip
+        loadPreviousRenders();
+
         // Wait for video metadata to load before resizing preview
         setTimeout(updatePreview, 200);
+    }
+
+    async function loadPreviousRenders() {
+        const container = document.getElementById('previousRenders');
+        if (!container || activeClipIndex < 0) { if (container) container.innerHTML = ''; return; }
+
+        try {
+            const res = await fetch(`/jobs/${editorJobId}/renders/${activeClipIndex}`);
+            const renders = await res.json();
+            if (!renders.length) { container.innerHTML = ''; return; }
+
+            container.innerHTML = `<div style="font-size:0.65rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.4rem">Previous Renders</div>`
+                + renders.map(r =>
+                    `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0;font-size:0.8rem">
+                        <span style="color:var(--accent);cursor:pointer" onclick="document.getElementById('editorVideo').src='/clips/${encodeURIComponent(r.path)}'">
+                            ${escapeHtml(r.ratio)}
+                        </span>
+                        <span style="color:var(--text-dim);font-size:0.7rem">${r.size_mb} MB</span>
+                        <a href="/clips/${encodeURIComponent(r.path)}" target="_blank" style="color:var(--text-dim);font-size:0.7rem;margin-left:auto">Download</a>
+                    </div>`
+                ).join('');
+        } catch(e) { container.innerHTML = ''; }
     }
 
     function setRatio(btn) {
@@ -1521,7 +1569,7 @@
         const captionStyle = getCaptionStyle();
 
         document.getElementById('renderBtn').disabled = true;
-        document.getElementById('renderStatus').innerHTML = 'Rendering...';
+        document.getElementById('renderStatus').innerHTML = 'Starting render...';
 
         try {
             const res = await fetch(`/jobs/${editorJobId}/render/${activeClipIndex}`, {
@@ -1553,10 +1601,14 @@
 
                         // Show rendered video
                         document.getElementById('editorVideo').src = `/clips/${encodeURIComponent(status.output_path)}`;
+                        // Refresh previous renders list
+                        loadPreviousRenders();
                     } else if (status.status === 'failed') {
                         clearInterval(pollRender);
                         document.getElementById('renderBtn').disabled = false;
                         document.getElementById('renderStatus').innerHTML = `<span style="color:var(--error)">Failed: ${escapeHtml(status.error || 'Unknown error')}</span>`;
+                    } else if (status.current_step) {
+                        document.getElementById('renderStatus').innerHTML = escapeHtml(status.current_step);
                     }
                 } catch(e) {}
             }, 2000);

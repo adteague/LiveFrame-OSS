@@ -175,6 +175,7 @@ async def render_clip(
     openai_api_key: str = "",
     hf_token: str = "",
     transcript_cache_path: Path | None = None,
+    on_step: callable | None = None,
 ) -> Path:
     """Apply aspect ratio crop, styled captions, and intro/outro to a raw clip.
 
@@ -190,7 +191,12 @@ async def render_clip(
         working_path = tmp_dir / "working.mp4"
         shutil.copy2(raw_clip_path, working_path)
 
+        def _step(msg: str):
+            if on_step:
+                on_step(msg)
+
         # Step 1: Apply aspect ratio crop if needed
+        _step(f"Cropping to {aspect_ratio.value}...")
         crop_filter = _get_crop_filter(aspect_ratio)
         if crop_filter:
             cropped_path = tmp_dir / "cropped.mp4"
@@ -224,6 +230,7 @@ async def render_clip(
 
         # Step 2: Apply captions if enabled
         if caption_style and caption_style.enabled:
+            _step("Transcribing audio...")
             _, _, width, height = await _probe_clip(working_path)
             await add_captions(
                 clip_path=working_path,
@@ -239,6 +246,7 @@ async def render_clip(
 
         # Step 3: Apply watermark if enabled
         if watermark and watermark.enabled and watermark.image_path:
+            _step("Applying watermark...")
             _, _, width, height = await _probe_clip(working_path)
             wm_out = tmp_dir / "watermarked.mp4"
             await _apply_watermark(working_path, wm_out, watermark, width, height)
@@ -247,6 +255,7 @@ async def render_clip(
 
         # Step 4: Concat intro/outro if specified
         if intro_path or outro_path:
+            _step("Joining intro/outro...")
             _, _, body_w, body_h = await _probe_clip(working_path)
             concat_path = tmp_dir / "final.mp4"
             await _concat_with_intro_outro(

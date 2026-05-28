@@ -647,6 +647,11 @@ async def render_clip_endpoint(
     async def _do_render():
         try:
             _render_tasks[render_key]["status"] = RenderStatus.RENDERING
+            _render_tasks[render_key]["current_step"] = "Starting render..."
+
+            def _on_step(msg: str):
+                _render_tasks[render_key]["current_step"] = msg
+
             await render_clip(
                 raw_clip_path=raw_path,
                 output_path=output_path,
@@ -659,9 +664,11 @@ async def render_clip_endpoint(
                 openai_api_key=request.openai_api_key or settings.openai_api_key,
                 hf_token=request.hf_token or settings.hf_token,
                 transcript_cache_path=_transcript_cache_path(job_id, clip_index),
+                on_step=_on_step,
             )
             _render_tasks[render_key]["status"] = RenderStatus.COMPLETED
             _render_tasks[render_key]["output_path"] = str(output_path)
+            _render_tasks[render_key]["current_step"] = "Done"
         except Exception as e:
             logger.error("Render failed: %s", e)
             _render_tasks[render_key]["status"] = RenderStatus.FAILED
@@ -669,6 +676,7 @@ async def render_clip_endpoint(
 
     _render_tasks[render_key] = {
         "status": RenderStatus.PENDING,
+        "current_step": "Queued...",
         "output_path": None,
         "error": None,
         "task": asyncio.create_task(_do_render()),
@@ -702,9 +710,48 @@ async def render_status(job_id: str, clip_index: int, ratio: str = "16:9"):
 
     return RenderResponse(
         status=task_info["status"],
+        current_step=task_info.get("current_step"),
         output_path=task_info["output_path"],
         error=task_info["error"],
     )
+
+
+@router.get("/jobs/{job_id}/renders/{clip_index}")
+async def list_renders(job_id: str, clip_index: int):
+    """List previously rendered versions of a clip."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    clip = None
+    for c in job.clips:
+        if c.highlight.index == clip_index:
+            clip = c
+            break
+
+    if not clip:
+        return []
+
+    raw_path = Path(clip.output_path)
+    rendered_dir = raw_path.parent / "rendered"
+    if not rendered_dir.exists():
+        return []
+
+    renders = []
+    stem = raw_path.stem
+    for f in sorted(rendered_dir.glob(f"{stem}_*.mp4")):
+        # Extract ratio tag from filename (e.g., clip_001_..._16x9.mp4 -> 16:9)
+        ratio_tag = f.stem[len(stem) + 1:]
+        ratio = ratio_tag.replace("x", ":")
+        size_mb = f.stat().st_size / (1024 * 1024)
+        renders.append({
+            "filename": f.name,
+            "path": str(f),
+            "ratio": ratio,
+            "size_mb": round(size_mb, 1),
+        })
+
+    return renders
 
 
 def _save_clip_settings(job: Job, clip_index: int, settings: ClipRenderSettings) -> None:

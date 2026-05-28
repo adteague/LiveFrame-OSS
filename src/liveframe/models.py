@@ -172,6 +172,7 @@ class RenderResponse(BaseModel):
     """Response for a render job."""
 
     status: RenderStatus
+    current_step: str | None = None
     output_path: str | None = None
     error: str | None = None
 
