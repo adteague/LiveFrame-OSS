@@ -37,6 +37,7 @@ dependencies = [
 [project.optional-dependencies]
 captions = [
     "faster-whisper>=1.0",
+    "Pillow>=10.0",
 ]
 dev = [
     "pytest>=8.0",
