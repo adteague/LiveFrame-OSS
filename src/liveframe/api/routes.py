@@ -163,65 +163,59 @@ def _download_from_gcs(gcs_uri: str) -> Path:
 
 async def _run_job(job: Job, settings: LiveframeSettings) -> None:
     """Background task that runs the processing pipeline for a job."""
-    req = job.request
-
-    # Build settings overrides from request
-    overrides = {}
-    if req.gemini_model:
-        try:
-            overrides["gemini_model"] = GeminiModel(req.gemini_model)
-        except ValueError:
-            pass
-    if req.analysis_mode:
-        try:
-            overrides["analysis_mode"] = AnalysisMode(req.analysis_mode)
-        except ValueError:
-            pass
-
-    if req.api_key:
-        overrides["gemini_api_key"] = req.api_key
-    if req.openai_api_key:
-        overrides["openai_api_key"] = req.openai_api_key
-
-    job_settings = settings.model_copy(
-        update={
-            **overrides,
-            "target_clips_per_hour": req.target_clips_per_hour,
-            "min_clip_seconds": req.min_clip_seconds,
-            "margin_seconds": req.margin_seconds,
-            "accurate_cuts": req.accurate_cuts,
-            "captions": req.captions,
-            "caption_model_size": req.caption_model_size,
-        }
-    )
-
-    # Resolve criteria
-    criteria = req.criteria
-    preset = None
-    if req.preset:
-        try:
-            preset = PresetCriteria(req.preset)
-        except ValueError:
-            pass
-
-    output_dir = Path(req.output_dir) if req.output_dir else None
-
-    # Download from GCS if needed
     local_input = None
-    if req.input_path.startswith("gs://"):
-        job.progress = ProgressEvent(status=JobStatus.PENDING, current_step="Downloading video from cloud...")
-        _save_job(job)
-        try:
-            local_input = await asyncio.to_thread(_download_from_gcs, req.input_path)
-        except Exception as e:
-            logger.error("GCS download failed for job %s: %s", job.id, e)
-            job.progress = ProgressEvent(status=JobStatus.FAILED, current_step="Failed", error=f"Download failed: {e}")
-            _save_job(job)
-            return
-
-    input_path = local_input or Path(req.input_path)
-
     try:
+        req = job.request
+
+        # Build settings overrides from request
+        overrides = {}
+        if req.gemini_model:
+            try:
+                overrides["gemini_model"] = GeminiModel(req.gemini_model)
+            except ValueError:
+                pass
+        if req.analysis_mode:
+            try:
+                overrides["analysis_mode"] = AnalysisMode(req.analysis_mode)
+            except ValueError:
+                pass
+
+        if req.api_key:
+            overrides["gemini_api_key"] = req.api_key
+        if req.openai_api_key:
+            overrides["openai_api_key"] = req.openai_api_key
+
+        job_settings = settings.model_copy(
+            update={
+                **overrides,
+                "target_clips_per_hour": req.target_clips_per_hour,
+                "min_clip_seconds": req.min_clip_seconds,
+                "margin_seconds": req.margin_seconds,
+                "accurate_cuts": req.accurate_cuts,
+                "captions": req.captions,
+                "caption_model_size": req.caption_model_size,
+            }
+        )
+
+        # Resolve criteria
+        criteria = req.criteria
+        preset = None
+        if req.preset:
+            try:
+                preset = PresetCriteria(req.preset)
+            except ValueError:
+                pass
+
+        output_dir = Path(req.output_dir) if req.output_dir else None
+
+        # Download from GCS if needed
+        if req.input_path.startswith("gs://"):
+            job.progress = ProgressEvent(status=JobStatus.PENDING, current_step="Downloading video from cloud...")
+            _save_job(job)
+            local_input = await asyncio.to_thread(_download_from_gcs, req.input_path)
+
+        input_path = local_input or Path(req.input_path)
+
         async for event in process_video(
             input_path=input_path,
             settings=job_settings,
@@ -254,8 +248,8 @@ async def _run_job(job: Job, settings: LiveframeSettings) -> None:
         _save_job(job)
     finally:
         # Clean up GCS download temp file
-        if local_input and local_input.exists():
-            local_input.unlink(missing_ok=True)
+        if local_input and local_input is not None and Path(local_input).exists():
+            Path(local_input).unlink(missing_ok=True)
             logger.info("Cleaned up temp file %s", local_input)
 
 
