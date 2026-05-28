@@ -14,13 +14,15 @@ Feed Liveframe a 5+ hour stream VOD and it will:
 
 ## Quick Start
 
-### Guided setup (recommended)
+### One command (recommended)
 
 ```bash
-bash setup.sh
+bash start.sh
 ```
 
-This checks prerequisites, creates a virtual environment, installs Liveframe, and walks you through configuring your API key.
+This handles everything — installs prerequisites if needed, creates a virtual environment, prompts for your API key, and starts the server. On repeat runs it skips straight to launching.
+
+To set up without starting the server, use `bash setup.sh` instead.
 
 ### Manual setup
 
