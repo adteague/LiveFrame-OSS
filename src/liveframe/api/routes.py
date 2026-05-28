@@ -119,26 +119,6 @@ def load_persisted_jobs() -> None:
 # --- Pipeline Runner ---
 
 
-_CLIPS_BUCKET = "liveframe-uploads"  # Reuse the same bucket, different prefix
-
-
-def _upload_clips_to_gcs(job: Job) -> None:
-    """Upload completed clips to GCS and update clip paths to gs:// URIs."""
-    from google.cloud import storage as gcs
-
-    client = gcs.Client()
-    bucket = client.bucket(_CLIPS_BUCKET)
-
-    for clip in job.clips:
-        local_path = Path(clip.output_path)
-        if not local_path.exists():
-            continue
-        object_name = f"clips/{job.id}/{local_path.name}"
-        blob = bucket.blob(object_name)
-        blob.upload_from_filename(str(local_path))
-        clip.output_path = Path(f"gs://{_CLIPS_BUCKET}/{object_name}")
-        logger.info("Uploaded clip to gs://%s/%s", _CLIPS_BUCKET, object_name)
-
 
 def _download_from_gcs(gcs_uri: str) -> Path:
     """Download a gs:// URI to a local temp file. Returns the local path."""
@@ -228,13 +208,6 @@ async def _run_job(job: Job, settings: LiveframeSettings) -> None:
             # Sync highlights from manifest when available
             if event.status in (JobStatus.EXTRACTING, JobStatus.COMPLETED):
                 _sync_manifest(job, input_path, output_dir)
-
-            # Upload clips to GCS when complete
-            if event.status == JobStatus.COMPLETED and job.clips:
-                try:
-                    await asyncio.to_thread(_upload_clips_to_gcs, job)
-                except Exception as e:
-                    logger.warning("Failed to upload clips to GCS: %s", e)
 
             # Persist after every progress update
             _save_job(job)
