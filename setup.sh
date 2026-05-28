@@ -145,24 +145,14 @@ else
     fi
 fi
 
-# ── Step 6: Verify ────────────────────────────────────────────────────────
-echo ""
-info "Verifying installation..."
-liveframe --help >/dev/null 2>&1 && ok "liveframe --help works" || fail "liveframe --help failed"
-
 # ── Done ──────────────────────────────────────────────────────────────────
 echo ""
 printf "${GREEN}${BOLD}Setup complete!${NC}\n"
 echo ""
-echo "  To activate the environment in a new terminal:"
-echo "    source .venv/bin/activate"
+echo "  Start the web UI:"
+echo "    bash start.sh"
 echo ""
-echo "  To process a video:"
-echo "    liveframe run /path/to/video.mp4"
-echo ""
-echo "  To start the web API server:"
-echo "    liveframe serve"
-echo ""
-echo "  For more options:"
-echo "    liveframe --help"
+echo "  Or use an AI agent (Claude Code, Codex, etc.) to process videos"
+echo "  directly -- just open this folder and ask it to run Liveframe"
+echo "  on your video file."
 echo ""
