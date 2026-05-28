@@ -110,11 +110,12 @@ printf "Install diarization? [y/N]: "
 read -r INSTALL_DIARIZE
 
 if [ "$INSTALL_DIARIZE" = "y" ] || [ "$INSTALL_DIARIZE" = "Y" ]; then
-    info "Installing Liveframe (with captions + diarization)..."
+    info "Installing Liveframe with diarization..."
     pip install -e "$SCRIPT_DIR[diarize]" --quiet 2>&1 | tail -1
-    ok "Liveframe installed (with diarization)"
+    ok "Liveframe installed with diarization"
 else
-    info "Installing Liveframe (with caption support)..."
+    info "Skipping diarization"
+    info "Installing Liveframe..."
     pip install -e "$SCRIPT_DIR[captions]" --quiet 2>&1 | tail -1
     ok "Liveframe installed"
 fi
