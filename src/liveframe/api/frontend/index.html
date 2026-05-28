@@ -804,13 +804,48 @@
             try {
                 const res = await fetch(`/jobs/${jobId}`);
                 const data = await res.json();
+                if (currentView === 'dashboard') updateJobCard(jobId, data);
                 if (data.status === 'completed' || data.status === 'failed') {
                     clearInterval(pollTimers[jobId]);
                     delete pollTimers[jobId];
                     if (currentView === 'dashboard') loadDashboard();
                 }
             } catch(e) {}
-        }, 3000);
+        }, 2000);
+    }
+
+    function updateJobCard(jobId, data) {
+        const card = document.querySelector(`.job-card[onclick*="${jobId}"]`);
+        if (!card) return;
+
+        const p = data.progress || {};
+
+        // Update status badge
+        const badge = card.querySelector('.job-card-status');
+        if (badge) {
+            badge.className = `job-card-status ${data.status}`;
+            badge.textContent = data.status;
+        }
+
+        // Update current step text
+        const meta = card.querySelector('.job-card-meta');
+        if (meta && p.current_step) {
+            const clipCount = data.highlights?.length || 0;
+            meta.innerHTML = `${clipCount > 0 ? clipCount + ' clips' : ''}<br>${escapeHtml(p.current_step.substring(0, 60))}`;
+        }
+
+        // Update progress bar
+        let pct = 0;
+        if (data.status === 'extracting' && p.clips_total > 0) {
+            pct = (p.clips_extracted / p.clips_total) * 100;
+        } else if (p.chunks_total > 0) {
+            pct = (p.chunks_completed / p.chunks_total) * 100;
+        }
+        const fill = card.querySelector('.progress-bar-fill');
+        if (fill) {
+            fill.style.width = `${pct}%`;
+            if (data.status === 'completed') fill.classList.add('complete');
+        }
     }
 
     async function deleteJob(jobId) {
